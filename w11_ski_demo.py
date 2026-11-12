@@ -30,6 +30,10 @@ STATUS_PLAYING = "PLAYING"
 STATUS_PAUSED = "PAUSED"
 STATUS_GAME_OVER = "GAME_OVER"
 COIN_BONUS = 100
+DIFFICULTY_SPEEDS = {
+    "NORMAL": 1.0,
+    "HARD": 5.0,
+}
 
 
 def clamp(value, minimum, maximum):
@@ -37,16 +41,18 @@ def clamp(value, minimum, maximum):
     return max(minimum, min(value, maximum))
 
 
-def create_state(field_width, field_height, rng):
+def create_state(field_width, field_height, rng, difficulty="NORMAL"):
     """新しいゲームを開始するためのStateを用意する。"""
     half_width = min(19, max(13, (field_width - 12) // 2))
+    start_speed = DIFFICULTY_SPEEDS[difficulty]
     state = {
         "status": STATUS_READY,
+        "difficulty": difficulty,
         "x": field_width // 2,
         "y": max(3, int(field_height * 0.35)),
         "direction": 1,     # -1: 左、+1: 右。直進（0）は使わない。
-        "base_speed": 2.0,
-        "speed": 1.0,
+        "base_speed": start_speed,
+        "speed": start_speed,
         "elapsed_time": 0.0,   # 一時停止中は増えない
         "scroll_count": 0,    # コースが進んだ行数
         "score": 0,           # w11演習01で更新する
@@ -157,6 +163,17 @@ def read_key(state, key):
         return "QUIT"
     if state["status"] == STATUS_GAME_OVER and key in (ord("r"), ord("R")):
         return "RESTART"
+    if state["status"] == STATUS_READY:
+        if key in (ord("1"), ord("n"), ord("N"), curses.KEY_LEFT):
+            state["difficulty"] = "NORMAL"
+            state["base_speed"] = DIFFICULTY_SPEEDS["NORMAL"]
+            state["speed"] = DIFFICULTY_SPEEDS["NORMAL"]
+            return None
+        elif key in (ord("2"), ord("h"), ord("H"), curses.KEY_RIGHT):
+            state["difficulty"] = "HARD"
+            state["base_speed"] = DIFFICULTY_SPEEDS["HARD"]
+            state["speed"] = DIFFICULTY_SPEEDS["HARD"]
+            return None
     if key == ord(" "):
         if state["status"] in (STATUS_READY, STATUS_PAUSED):
             state["status"] = STATUS_PLAYING
@@ -194,7 +211,10 @@ def draw_game(screen, state):
         f"DIST {state['scroll_count']:05d} | TIME {mins:02d}:{seconds:02d}"
     )
     turn = "LEFT" if state["direction"] == -1 else "RIGHT"
-    info = f"SPEED {state['speed']:.2f}x | TURN {turn} | STATE {state['status']}"
+    info = (
+        f"MODE {state['difficulty']} | SPEED {state['speed']:.2f}x | "
+        f"TURN {turn} | STATE {state['status']}"
+    )
     draw_line(screen, 0, hud, curses.A_BOLD)
     draw_line(screen, 1, info)
     screen.addnstr(2, offset, "=" * width, width)
@@ -215,7 +235,7 @@ def draw_game(screen, state):
         screen.addnstr(FIELD_TOP + i, offset, "".join(chars), width)
 
     if state["status"] == STATUS_READY:
-        message = "READY! Press SPACE to start"
+        message = f"MODE: {state['difficulty']} (1/LEFT: Normal, 2/RIGHT: Hard) - SPACE to start"
     elif state["status"] == STATUS_PAUSED:
         message = "PAUSED - Press SPACE to resume"
     elif state["status"] == STATUS_GAME_OVER:
@@ -265,14 +285,17 @@ def run(screen):
         if state is None or size != current_size:
             field_width = min(MAX_FIELD_WIDTH, width - 4)
             field_height = height - 7
-            state = create_state(field_width, field_height, rng)
+            prev_difficulty = state["difficulty"] if state else "NORMAL"
+            state = create_state(field_width, field_height, rng, prev_difficulty)
             current_size = size
 
         command = read_key(state, key)
         if command == "QUIT":
             break
         if command == "RESTART":
-            state = create_state(state["field_width"], state["field_height"], rng)
+            state = create_state(
+                state["field_width"], state["field_height"], rng, state["difficulty"]
+            )
             state["status"] = STATUS_PLAYING
 
         update_game(state, dt, rng)

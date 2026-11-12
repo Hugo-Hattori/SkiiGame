@@ -29,6 +29,7 @@ STATUS_READY = "READY"
 STATUS_PLAYING = "PLAYING"
 STATUS_PAUSED = "PAUSED"
 STATUS_GAME_OVER = "GAME_OVER"
+COIN_BONUS = 100
 
 
 def clamp(value, minimum, maximum):
@@ -85,12 +86,23 @@ def create_course_row(state, rng, with_tree=True):
     if with_tree and rng.random() < tree_rate:
         tree = rng.randint(left + 3, right - 3)
 
-    return {"left": left, "right": right, "tree": tree}
+    coin = None
+    coin_rate = 0.25 #コインの出現率
+    if with_tree and rng.random() < 0.12:
+        coin = rng.randint(left + 3, right - 3)
+    if coin == tree:
+        coin = None
+
+    return {"left": left, "right": right, "tree": tree, "coin": coin}
 
 
-def update_distance_score(state):
+def update_distance_score(state, coin_collected=False):
     """w11演習01：コースが1行進んだときに、1回だけ呼び出される。"""
-    state["score"] += 1
+    if coin_collected:
+        state["score"] += COIN_BONUS
+    else:
+        # コインのみでスコアを稼ぎたい場合は、この行を削除（または pass に変更）
+        state["score"] += 1
 
 
 def move_course_one_row(state, rng):
@@ -118,6 +130,9 @@ def check_collision(state):
     elif row["tree"] == player_x:
         state["game_over_reason"] = "TREE!"
         state["status"] = STATUS_GAME_OVER
+    elif row.get("coin") == player_x:
+        row["coin"] = None  # 取得したコインを消す
+        update_distance_score(state, coin_collected=True)
 
 
 def update_game(state, dt, rng):
@@ -193,6 +208,8 @@ def draw_game(screen, state):
             chars[x] = "*"
         if row["tree"] is not None:
             chars[row["tree"]] = "A"
+        if row.get("coin") is not None:
+            chars[row["coin"]] = "@"
         if i == state["y"] and 0 <= player_x < width:
             chars[player_x] = "X" if state["status"] == STATUS_GAME_OVER else "O"
         screen.addnstr(FIELD_TOP + i, offset, "".join(chars), width)
@@ -204,7 +221,7 @@ def draw_game(screen, state):
     elif state["status"] == STATUS_GAME_OVER:
         message = f"GAME OVER ({state['game_over_reason']}) - R to restart"
     else:
-        message = "Avoid trees (A) and cliffs (*)!"
+        message = "Collect coins (@), avoid trees (A) and cliffs (*)!"
     draw_line(screen, rows - 3, message, curses.A_BOLD)
     draw_line(screen, rows - 2, "LEFT/RIGHT: switch turn | SPACE: start/pause | R: restart | Q: quit")
     screen.refresh()
